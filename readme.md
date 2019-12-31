@@ -22,6 +22,9 @@ This is an example firmware that demonstrates an ability to interact with the Po
   * High = 0.7ms high and 0.3ms low
 * Stop bit = 0.3ms high and 10ms low
 
+![Signal 1](docs/img/signal-1.jpg)
+![Signal 2](docs/img/signal-2.jpg)
+
 ## Research ##
 
 * It is possible to send a key that does not have a corresponding button on the actual keypad.  In theory, a code containing this key would not be possible to enter using the physical keypad.  Such a code could only ever be entered through the ESP32 interface, meaning that it would be a remote-only key.
