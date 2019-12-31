@@ -7,8 +7,8 @@
 
 #include "powerbolt-interface.h"
 
-rmt_obj_t* rmt_send = NULL;
-rmt_data_t buffer_out[20];
+// Definitions
+static void rmt_on_receive(uint32_t *data, size_t len);
 
 // IO Configuration
 #define IO_LOCKED_IN    0  // Microswitch input to detect when deadbolt is fully locked
@@ -41,8 +41,10 @@ Main Program Flow:
 */
 
 // Global Variables
-rmt_obj_t* rmt_sender = NULL;
+rmt_obj_t *rmt_sender = NULL;
 rmt_data_t rmt_send_buffer[20];
+rmt_obj_t *rmt_reader = NULL;
+rmt_data_t rmt_read_buffer[20];
 
 void setup() 
 {
@@ -86,11 +88,18 @@ void setup()
 
     // Configure RMT sender to talk to Powerbolt
     if ((rmt_sender = rmtInit(18, true, RMT_MEM_64)) == NULL)
-        Serial.println("init sender failed\n");
+        Serial.println("RMT sender init failed");
 
-    // Configure RMT tick  for sender (100k)
-    float realTick = rmtSetTick(rmt_sender, 100000);
-    Serial.printf("RMT tick set to: %fns\n", realTick);
+    // Configure RMT reader to listen to Powerbolt
+    if ((rmt_reader = rmtInit(19, false, RMT_MEM_256)) == NULL)
+        Serial.println("RMT reader init failed");
+
+    // Set RMT tick rates (read 10x speed of write)
+    rmtSetTick(rmt_sender, 100000);
+    rmtSetTick(rmt_reader, 10000);
+
+    // Start RMT reading
+    rmtRead(rmt_reader, rmt_on_receive);
 
     // Ready for main loop
     Serial.println("Ready for input");
@@ -144,4 +153,52 @@ void loop()
             break;
     }
     delay(10);
+}
+
+static void rmt_on_receive(uint32_t *data, size_t len) {
+    if (len == 0)
+        return;
+
+    Serial.print("Received ");
+    Serial.print(len);
+    Serial.print (" RMT bytes ");
+
+    if (len != 9)
+        return;
+
+    uint8_t parsed = 0;
+    bool parsable = true;
+
+    for (uint8_t i = 0; i < 9; i++) {
+        rmt_data_t *rmt_data = (rmt_data_t *) &data[i];
+
+        // If the bit is parseable
+        if (rmt_data->level0 == 1 && rmt_data->level1 == 0 && rmt_data->duration0 >= 27 && rmt_data->duration0 <= 33 && rmt_data->duration1 >= 67 && rmt_data->duration1 <= 73)
+            Serial.print("0 ");
+        else if (rmt_data->level0 == 1 && rmt_data->level1 == 0 && rmt_data->duration0 >= 67 && rmt_data->duration0 <= 73 && rmt_data->duration1 >= 27 && rmt_data->duration1 <= 33) {
+            if (i != 8)
+                parsed |= 0x80 >> i;
+            else
+                parsable = false;
+
+            Serial.print("1 ");
+        }
+        else if (rmt_data->level0 == 1 && rmt_data->level1 == 0 && rmt_data->duration0 >= 27 && rmt_data->duration0 <= 33 && rmt_data->duration1 == 0) {
+            if (i != 8)
+                parsable = false;
+            Serial.print("E ");
+        }
+
+        // Some straggler bit
+        else {
+            parsable = false;
+            Serial.printf("(%01x %04d %01x %04d) ", rmt_data->level0, rmt_data->duration0, rmt_data->level1, rmt_data->duration1);
+        }
+    }
+
+    if (parsable) {
+        Serial.printf("- %02x", parsed);
+    }
+
+    Serial.println();
 }
