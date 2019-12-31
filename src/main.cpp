@@ -55,9 +55,13 @@ void setup()
     Serial.begin(115200);
 
     // Get wakeup reason (timer, pin)
-    // var reason = getReason();
+    esp_reset_reason_t reset_reason = esp_reset_reason();
     Serial.print("Awake - ");
-    Serial.println("{reason TODO}");
+    Serial.print(reset_reason);
+    if (reset_reason == ESP_RST_DEEPSLEEP)
+        Serial.println(" (deepsleep)");
+    else
+        Serial.println();
 
     // Detect configuration override button
     //bool configModerequested = // button pressed
