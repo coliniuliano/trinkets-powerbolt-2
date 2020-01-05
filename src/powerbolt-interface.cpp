@@ -26,7 +26,7 @@ void powerbolt_write_buffer(rmt_data_t rmt_buffer[], POWERBOLT_KEY_CODES key_cod
 
         // 8 command bits (MSB to LSB)
         for (uint8_t i = 0; i < 8; i++) {
-            if ((key_data[key_code] & (0x80 >> i)) == 0) {
+            if ((powerbolt_key_codes[key_code] & (0x80 >> i)) == 0) {
                 powerbolt_write_buffer_bit_low(&rmt_buffer[bit_num++]);
             } else {
                 powerbolt_write_buffer_bit_high(&rmt_buffer[bit_num++]);

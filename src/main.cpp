@@ -151,6 +151,12 @@ void loop()
             powerbolt_write_buffer(rmt_send_buffer, KEY_LOCK);
             rmtWrite(rmt_sender, rmt_send_buffer, 20);
             break;
+        case 'c':
+        case 'C':
+            Serial.println("Sending key: Clear");
+            powerbolt_write_buffer(rmt_send_buffer, KEY_CLEAR);
+            rmtWrite(rmt_sender, rmt_send_buffer, 20);
+            break;
     }
     delay(10);
 }
@@ -163,8 +169,10 @@ static void rmt_on_receive(uint32_t *data, size_t len) {
     Serial.print(len);
     Serial.print (" RMT bytes ");
 
-    if (len != 9)
+    if (len != 9) {
+        Serial.println();
         return;
+    }
 
     uint8_t parsed = 0;
     bool parsable = true;
