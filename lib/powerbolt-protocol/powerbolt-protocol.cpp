@@ -1,4 +1,4 @@
-#include "powerbolt-interface.h"
+#include "powerbolt-protocol.h"
 
 static void powerbolt_write_buffer_bit(rmt_data_t *rmt_buffer_bit, uint32_t high_duration, uint32_t low_duration) {
     rmt_buffer_bit->level0 = 1;
@@ -36,4 +36,35 @@ void powerbolt_write_buffer(rmt_data_t rmt_buffer[], POWERBOLT_KEY_CODES key_cod
         // End bit
         powerbolt_write_buffer_bit(&rmt_buffer[bit_num++], 3, 100);
     }
+}
+
+// Reads 9 bits from an RMT input buffer into a char and checks validity
+powerbolt_read_t powerbolt_parse_buffer(uint32_t *data) {
+    powerbolt_read_t result;
+    result.valid = false;
+    result.data = 0;
+
+    // Look for 8 bits of logical 0 or 1
+    for (uint8_t i = 0; i < 8; i++) {
+        rmt_data_t *rmt_data = (rmt_data_t *) &data[i];
+
+        if (rmt_data->level0 != 1 || rmt_data->level1 != 0)
+            return result;
+
+        // "0" bit
+        if (rmt_data->duration0 >= 27 && rmt_data->duration0 <= 33 && rmt_data->duration1 >= 67 && rmt_data->duration1 <= 73)
+            ;
+        // "1" bit
+        else if (rmt_data->duration0 >= 67 && rmt_data->duration0 <= 73 && rmt_data->duration1 >= 27 && rmt_data->duration1 <= 33)
+            result.data |= 0x80 >> i;
+        else
+            return result;
+    }
+
+    // Stop bit has a duration1 that is too long for the pulse timer to receive
+    rmt_data_t *rmt_data = (rmt_data_t *) &data[8];
+    if (rmt_data->level0 == 1 && rmt_data->level1 == 0 && rmt_data->duration0 >= 27 && rmt_data->duration0 <= 33 && rmt_data->duration1 == 0)
+        result.valid = true;
+
+    return result;
 }

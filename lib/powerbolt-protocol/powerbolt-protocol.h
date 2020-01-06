@@ -1,10 +1,10 @@
-#ifndef POWERBOLT_INTERFACE_H
-#define POWERBOLT_INTERFACE_H
+#ifndef POWERBOLT_PROTOCOL_H
+#define POWERBOLT_PROTOCOL_H
 
 #include "Arduino.h"
 
-enum POWERBOLT_KEY_CODES { KEY_12, KEY_34, KEY_56, KEY_78, KEY_90, KEY_LOCK, 
-    KEY_UNKNOWN, KEY_CLEAR 
+enum POWERBOLT_KEY_CODES { 
+    KEY_12, KEY_34, KEY_56, KEY_78, KEY_90, KEY_UNKNOWN, KEY_LOCK, KEY_CLEAR
 };
 const uint8_t powerbolt_key_codes[] = {
     0x01,   // 12
@@ -33,17 +33,25 @@ const uint8_t powerbolt_response_codes[] = {
     0xC4,   // 1 green blip, lights stay on after blip
     0xC5,   // 2 green long
     //0xC6, // nothing
-    0xC7,   // lights off, clear/reset code
+    0xC7,   // lights off, code memory cleared
     0xC8,   // 1 yellow long
     //0xC9, // nothing
-    0xCA,   // 3 yellow short
+    0xCA,   // 3 yellow medium
     0xCB,   // 1 yellow medium
-    //0xCC  // nothing
+    //0xCC  // nothing - receved during programming door orientation
     0xCD,   // 5 red short
     0xCE,   // 10 red short
     //0xCF  // nothing
 };
 
-void powerbolt_write_buffer(rmt_data_t rmt_buffer[], POWERBOLT_KEY_CODES key_code);
+typedef struct {
+    uint8_t data :8;
+    uint8_t valid :1;
+} powerbolt_read_t;
+
+extern "C" {
+    void powerbolt_write_buffer(rmt_data_t rmt_buffer[], POWERBOLT_KEY_CODES key_code);
+    powerbolt_read_t powerbolt_parse_buffer(uint32_t *data);
+}
 
 #endif

@@ -51,6 +51,17 @@ This is an example firmware that demonstrates an ability to interact with the Po
      * C8 - long yellow, odd beep
      * C1 - green 
      * C7 - done
+* Reset button pressed
+    * CB - yellow blip
+    * Reset button released
+        * CC - nothing
+        * C7 - done
+* Reset button held
+    * CB - yellow blip
+    * CC - reset
+    * CA - 3 yellow medium
+    * C7 - when the lights go off
+
 
 ## Sequences from LED keypad to deadbolt ##
 
