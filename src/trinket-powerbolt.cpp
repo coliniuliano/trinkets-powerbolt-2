@@ -7,33 +7,37 @@
 static void rmt_on_receive_from_powerbolt(uint32_t *data, size_t len);
 static void rmt_on_receive_from_keypad(uint32_t *data, size_t len);
 
+// Stolen from esp32-hal-rmt.c
+struct rmt_obj_s
+{
+    bool allocated;
+    void *events;
+    int pin;
+    int channel;
+};
+
 // Private variables
-rmt_obj_t *rmt_sender = NULL;
+rmt_obj_t *rmt_writer = NULL; 
 rmt_data_t rmt_send_buffer[20];
 rmt_obj_t *rmt_reader_from_powerbolt = NULL;
 rmt_obj_t *rmt_reader_from_keypad = NULL;
 rmt_data_t rmt_read_from_powerbolt_buffer[20];
 rmt_data_t rmt_read_from_keypad_buffer[20];
 
-/*static void rmt_on_receive_keypad(uint32_t *data, size_t len) {
-    //
-}
-
-static void rmt_on_receive_powerbolt(uint32_t *data, size_t len) {
-    //
-}*/
-
 void trinket_powerbolt_setup(int keypad_read_pin, int powerbolt_read_pin, int powerbolt_write_pin) {
+    // Configure RMT writer to interface with Powerbolt, but detach the writer from the pin
+    rmt_writer = rmtInit(powerbolt_read_pin, true, RMT_MEM_64);
+    pinMatrixOutDetach(powerbolt_read_pin, 0, 0);
+
     // Configure RMT reader to interface with Powerbolt
     rmt_reader_from_powerbolt = rmtInit(keypad_read_pin, false, RMT_MEM_128);
     rmt_reader_from_keypad = rmtInit(powerbolt_read_pin, false, RMT_MEM_128);
-    rmt_sender = rmtInit(powerbolt_write_pin, true, RMT_MEM_64);
 
     // Set RMT tick rates
     // Write is 10x slower than read because it needs to output very long start/stop pulses
     rmtSetTick(rmt_reader_from_powerbolt, 10000);
     rmtSetTick(rmt_reader_from_keypad, 10000);
-    rmtSetTick(rmt_sender, 100000);
+    rmtSetTick(rmt_writer, 100000);
 
     // Start RMT reading on both ports
     rmtRead(rmt_reader_from_powerbolt, rmt_on_receive_from_powerbolt);
@@ -42,7 +46,17 @@ void trinket_powerbolt_setup(int keypad_read_pin, int powerbolt_read_pin, int po
 
 void trinket_powerbolt_write(POWERBOLT_KEY_CODES key_code) {
     powerbolt_write_buffer(rmt_send_buffer, key_code);
-    rmtWrite(rmt_sender, rmt_send_buffer, 20);
+
+    // Temporarily assign the RMT channel as an output
+    pinMatrixOutAttach(rmt_writer->pin, RMT_SIG_OUT0_IDX + rmt_writer->channel, 0, 0);
+    rmtWrite(rmt_writer, rmt_send_buffer, 20);
+
+    // Wait for write to complete... this could be improved
+    delay(100);
+
+    // Set the RMT channel back to read mode so the keypad can continue to work
+    pinMatrixOutDetach(rmt_writer->pin, 0, 0);
+    pinMode(rmt_writer->pin, INPUT);
 }
 
 static void rmt_on_receive(const char * port, uint32_t *data, size_t len) {

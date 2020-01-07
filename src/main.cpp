@@ -16,7 +16,6 @@
 #define I_DEADBOLT_READ         18  // Signal to deadbolt sniffer
 #define O_DEADBOLT_WRITE        0   // Output to deadbolt from this device
 #define O_BLOCK_KEYPAD_READ     0   // Output to block communication from deadbolt to keypad
-#define O_BLOCK_DEADBOLT_READ   0   // Output to block communication from keypad to deadbolt
 
 /*
 Considerations:

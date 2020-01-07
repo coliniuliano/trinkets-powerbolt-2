@@ -32,6 +32,7 @@ This is an example firmware that demonstrates an ability to interact with the Po
     * This is represented in the firmware as the *Unknown* key
 * The keypad tells the deadbolt when a timeout has occurred by sending a D4 (clear) command.  The deadbolt then sends a sequence of C3 (red flash 3 times) and beeps 3 times, then sends a C7.  Other models of keypad have a Clear button.
     * The keypad also decides when a timeout occurs in the master code menu by sending a D2 when it stops blinking the LED yellow.
+* The keypad can not talk to the deadbolt when the ESP32 is set to output on the RMT channel.  A blocking FET in this direction is therefore not necessary, though it could save power.
 
 ## Sequences from deadbolt to LED keypad ##
 
