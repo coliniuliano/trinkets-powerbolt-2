@@ -1,2 +1,4 @@
 .pio
 .vscode
+include/aws-iot-credentials.h
+include/wifi-credentials.h

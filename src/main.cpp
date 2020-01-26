@@ -1,135 +1,211 @@
 #include "Arduino.h"
 #include "esp32-hal.h"
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <PubSubClient.h>
 
 // Private libraries
 #include "powerbolt-protocol.h"
 
 // Project-specific
 #include "trinket-powerbolt.h"
+#include "aws-iot-credentials.h"
 
+// TEMPORARY
+#include "wifi-credentials.h"
 
 // IO Configuration
-#define I_CONFIG_BTN            0   // Button to force configuration mode on startup
-#define I_BOLT_LOCKED           0   // Microswitch input to detect when deadbolt is fully locked
+/*#define I_BOLT_LOCKED           0   // Microswitch input to detect when deadbolt is fully locked
 #define I_BOLT_UNLOCKED         0   // Microswitch input to detect when deadbolt is fully unlocked
 #define I_KEYPAD_READ           19  // Signal to keypad sniffed
 #define I_DEADBOLT_READ         18  // Signal to deadbolt sniffer
-#define O_DEADBOLT_WRITE        0   // Output to deadbolt from this device
 #define O_BLOCK_KEYPAD_READ     0   // Output to block communication from deadbolt to keypad
+#define O_BLOCK_BUZZER          0   // Output to block the buzzer
+*/
 
-/*
-Considerations:
-    - sleep mode
-    - esp-now vs MQTT based on configuration
-        - start with one for simplicity
-    - OTA firmware updates to simplify future development once installed
-    - configuration override button
+// IoT Configuration
+#define DEVICE_NAME             "trinket-esp32-1"
+
+#define MQTT_SERVER             "ahu6v4hx3ap4w-ats.iot.us-east-1.amazonaws.com"
+#define MQTT_PORT               8883
+#define MQTT_TOPIC              "test"
+
+// Generic Configuration
+/*#define SLEEP_TIME_M            3
 */
 
 /*
 Main Program Flow:
-    - if device is not configured
-        - open network presenting a configuration page
     - hardware init
         - configure RMT
         - attach interrupts
-        - determine current state
-    - enter deep sleep mode and wait for input or timer
-    - upon wake, check for remote commands
-    - handle input and go back to sleep
+    Configuration Mode:
+    - open network presenting a configuration page
+    - block from continuing
+    - flash keypad LEDs occasionally to indicate that the device is wasting power in config mode
+    Normal Mode:
+    - start connecting to wifi
+        - if device is wifi connection fails, enter configuration mode
+    - if cause of wakeup was a pinpad interrupt
+        - if configuration is requested (by key combination)
+            - enter configuration mode
+        - observe pinpad and deadbolt comms and write to MQTT
+    - if cause of wakeup was a lock/unlock
+        - write to MQTT
+    - if cause of wakeup was a timer
+        - process commands from MQTT server
+    - enter deep sleep mode
 */
+
+WiFiClientSecure wifi_client;
+PubSubClient mqtt_client(wifi_client);
+
+static void on_powerbolt_read(uint8_t port, powerbolt_read_t received);
 
 void setup()
 {
-    // Configure IO first
-    //pinMode(IO_BLOCK_IN, OUTPUT);
-    //pinMode(IO_BLOCK_OUT, OUTPUT);
-    //
-    // 
-
-    trinket_powerbolt_setup(I_KEYPAD_READ, I_DEADBOLT_READ, O_DEADBOLT_WRITE);
-
+    // Hardware init
+    /*pinMode(I_BOLT_LOCKED, INPUT_PULLDOWN);
+    pinMode(I_BOLT_UNLOCKED, INPUT_PULLDOWN);
+    pinMode(O_BLOCK_KEYPAD_READ, OUTPUT);
+    trinket_powerbolt_setup(I_KEYPAD_READ, I_DEADBOLT_READ);*/
     Serial.begin(115200);
 
+    // No wifi or MQTT configuration in this hard-coded version
 
     // Get wakeup reason (timer, pin)
-    esp_reset_reason_t reset_reason = esp_reset_reason();
-    Serial.print("Awake - ");
-    Serial.print(reset_reason);
-    if (reset_reason == ESP_RST_DEEPSLEEP)
-        Serial.println(" (deepsleep)");
-    else
-        Serial.println();
+    esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
+    Serial.print("Wakeup - ");
+    Serial.println(wakeup_reason);
 
-    // Detect configuration override button
-    //bool configModerequested = // button pressed
+    // If device was woken up from physical interaction with the deadbolt
+    /*if (wakeup_reason == ESP_SLEEP_WAKEUP_EXT1) {
+        int wakeup_interrupt = esp_sleep_get_ext1_wakeup_status();
 
-    // Retrieve device configuration
-    // var config = getconfig();
+        // If the device was woken up from pinpad or keypad activity
+        if (wakeup_interrupt == (1 << I_KEYPAD_READ | 1 << I_DEADBOLT_READ)) {
+            Serial.println("Keypad activity detected");
+            // Wait for RMT events
+        }
 
-    //if (!config || configModeRequested) {
-        // Enter configuration mode
-        //Serial.println("Configuration mode");
-        //
-    //}
-
-    // If device was woken up from external input
-    //
+        // If the device was woken up from a lock/unlock
+        if (wakeup_interrupt == (1 << I_BOLT_LOCKED & 1 << I_BOLT_UNLOCKED)) {
+            // Send to MQTT
+            Serial.println("Lock/unlock detected");
+        }
+    }*/
 
     // If device was woken up from timer
-    //
+    if (wakeup_reason == ESP_SLEEP_WAKEUP_TIMER) {
+        // Check for command messages on MQTT server
+        Serial.println("Timer");
+    }
 
-    // Try to establish a connection
-    //
-
-    // Ready for main loop
-    Serial.println("Ready for input");
+    /*trinket_powerbolt_read(on_powerbolt_read);
+    */
+   Serial.println("Ready");
 }
+
+// Put received messages into a queue until Wifi and MQTT connections are established
+/*static void on_powerbolt_read(uint8_t port, powerbolt_read_t received) {
+    Serial.print(port == 0 ? "Powerbolt" : "Keypad");
+    Serial.print(": ");
+    if (received.valid)
+        Serial.printf("%02x", received.data);
+    else
+        Serial.print("invalid");
+
+    Serial.println();
+}
+
+// Prevent the keypad from receiving signals from the powerbolt
+static void block_keypad_read() {
+    digitalWrite(O_BLOCK_KEYPAD_READ, HIGH);
+}
+
+// Prevent the powerbolt from sounding the buzzer on inputs
+static void block_powerbolt_buzzer() {
+    digitalWrite(O_BLOCK_BUZZER, HIGH);
+}*/
+
+static bool connect_to_wifi() {
+    WiFi.setHostname(DEVICE_NAME);
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    uint8_t wifi_timeout_count = 100;
+    while (WiFi.status() != WL_CONNECTED && wifi_timeout_count--) {
+        delay(100);
+    }
+    return wifi_timeout_count;
+}
+
+static bool connect_to_mqtt() {
+    wifi_client.setCACert(AWS_CERT_CA);
+    wifi_client.setCertificate(AWS_CERT_CRT);
+    wifi_client.setPrivateKey(AWS_CERT_PRIVATE);
+
+    mqtt_client.setServer(MQTT_SERVER, MQTT_PORT);
+
+    return mqtt_client.connect(DEVICE_NAME);
+}
+
+static void mqtt_received(char *topic, byte *payload, unsigned int length)
+{
+    Serial.print("MQTT [");
+    Serial.print(topic);
+    Serial.print("]: ");
+    for (int i = 0; i < length; i++)
+        Serial.print((char)payload[i]);
+    Serial.println();
+}
+
+/*static void enter_deep_sleep() {
+    const uint64_t bitmask = 1 << I_KEYPAD_READ | 1 << I_DEADBOLT_READ | 1 << I_BOLT_LOCKED | 1 << I_BOLT_UNLOCKED;
+    esp_sleep_enable_ext1_wakeup(bitmask, ESP_EXT1_WAKEUP_ANY_HIGH);
+    esp_sleep_enable_timer_wakeup(SLEEP_TIME_M * 60 * 1000 * 1000);
+    esp_deep_sleep_start();
+}*/
+
 
 void loop()
 {
-    int readByte = Serial.read();
-    switch (readByte) {
-        case '1':
-        case '2':
-            Serial.println("Sending key: 1/2");
-            trinket_powerbolt_write(KEY_12);
-            break;
-        case '3':
-        case '4':
-            Serial.println("Sending key: 3/4");
-            trinket_powerbolt_write(KEY_34);
-            break;
-        case '5':
-        case '6':
-            Serial.println("Sending key: 5/6");
-            trinket_powerbolt_write(KEY_56);
-            break;
-        case '7':
-        case '8':
-            Serial.println("Sending key: 7/8");
-            trinket_powerbolt_write(KEY_78);
-            break;
-        case '9':
-        case '0':
-            Serial.println("Sending key: 9/0");
-            trinket_powerbolt_write(KEY_90);
-            break;
-        case 'u':
-        case 'U':
-            Serial.println("Sending key: unknown");
-            trinket_powerbolt_write(KEY_UNKNOWN);
-            break;
-        case 'l':
-        case 'L':
-            Serial.println("Sending key: Lock");
-            trinket_powerbolt_write(KEY_LOCK);
-            break;
-        case 'c':
-        case 'C':
-            Serial.println("Sending key: Clear");
-            trinket_powerbolt_write(KEY_CLEAR);
-            break;
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("Connecting to wifi");
+        if (!connect_to_wifi()) {
+            Serial.println("Failed to connect to wifi");
+            delay(1000);
+            return;
+        }
     }
-    delay(10);
+
+    if (mqtt_client.state() != MQTT_CONNECTED) {
+        Serial.println("Connecting to MQTT");
+        if (!connect_to_mqtt()) {
+            Serial.print("Failed to connect to MQTT - ");
+            Serial.println(mqtt_client.state());
+            delay(1000);
+            return;
+        }
+    }
+
+    Serial.println("Subscribing to MQTT topic");
+    if (!mqtt_client.subscribe(MQTT_TOPIC)) {
+        Serial.println("Failed to subscribe to topic");
+        delay(1000);
+        return;
+    }
+
+    mqtt_client.setCallback(mqtt_received);
+
+    // Temporary to see if connection works
+    while (WiFi.status() == WL_CONNECTED && mqtt_client.state() == MQTT_CONNECTED) {
+        mqtt_client.publish(MQTT_TOPIC, "hello");
+        mqtt_client.loop();
+        delay(1000);
+    }
+
+    // Send and receive
+    // - if lock/unlock, probably done
+    // - if keypad/powerbolt were talking, give them some time to finish
+
+    // Go to sleep
 }

@@ -1,20 +1,11 @@
 #include "trinket-powerbolt.h"
 
 #include "esp32-hal.h"
-//#include "powerbolt-protocol.h"
+#include "powerbolt-protocol.h"
 
 // Private declarations
 static void rmt_on_receive_from_powerbolt(uint32_t *data, size_t len);
 static void rmt_on_receive_from_keypad(uint32_t *data, size_t len);
-
-// Stolen from esp32-hal-rmt.c
-struct rmt_obj_s
-{
-    bool allocated;
-    void *events;
-    int pin;
-    int channel;
-};
 
 // Private variables
 rmt_obj_t *rmt_writer = NULL; 
@@ -23,8 +14,9 @@ rmt_obj_t *rmt_reader_from_powerbolt = NULL;
 rmt_obj_t *rmt_reader_from_keypad = NULL;
 rmt_data_t rmt_read_from_powerbolt_buffer[20];
 rmt_data_t rmt_read_from_keypad_buffer[20];
+void (*read_callback)(uint8_t, powerbolt_read_t) = NULL;
 
-void trinket_powerbolt_setup(int keypad_read_pin, int powerbolt_read_pin, int powerbolt_write_pin) {
+void trinket_powerbolt_setup(int keypad_read_pin, int powerbolt_read_pin) {
     // Configure RMT writer to interface with Powerbolt, but detach the writer from the pin
     rmt_writer = rmtInit(powerbolt_read_pin, true, RMT_MEM_64);
     pinMatrixOutDetach(powerbolt_read_pin, 0, 0);
@@ -59,26 +51,25 @@ void trinket_powerbolt_write(POWERBOLT_KEY_CODES key_code) {
     pinMode(rmt_writer->pin, INPUT);
 }
 
-static void rmt_on_receive(const char * port, uint32_t *data, size_t len) {
+void trinket_powerbolt_read(void (*callback)(uint8_t, powerbolt_read_t)) {
+    read_callback = callback;
+}
+
+static void rmt_on_receive(uint8_t port, uint32_t *data, size_t len) {
     if (len != 9)
         return;
 
     powerbolt_read_t received_byte = powerbolt_parse_buffer(data);
 
-    Serial.print(port);
-    Serial.print(": ");
-    if (received_byte.valid)
-        Serial.printf("%02x", received_byte.data);
-    else
-        Serial.print("invalid");
-
-    Serial.println();
+    if (read_callback != NULL) {
+        (*read_callback)(port, received_byte);
+    }
 }
 
 static void rmt_on_receive_from_powerbolt(uint32_t *data, size_t len) {
-    rmt_on_receive("Powerbolt", data, len);
+    rmt_on_receive(0, data, len);
 }
 
 static void rmt_on_receive_from_keypad(uint32_t *data, size_t len) {
-    rmt_on_receive("Keypad", data, len);
+    rmt_on_receive(1, data, len);
 }
