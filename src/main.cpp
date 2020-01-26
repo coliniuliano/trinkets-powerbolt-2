@@ -15,6 +15,7 @@
 #include "wifi-credentials.h"
 
 // IO Configuration
+#define I_BUTTON                0
 /*#define I_BOLT_LOCKED           0   // Microswitch input to detect when deadbolt is fully locked
 #define I_BOLT_UNLOCKED         0   // Microswitch input to detect when deadbolt is fully unlocked
 #define I_KEYPAD_READ           19  // Signal to keypad sniffed
@@ -66,6 +67,7 @@ PubSubClient mqtt_client(wifi_client);
 void setup()
 {
     // Hardware init
+    pinMode(I_BUTTON, INPUT_PULLUP);
     /*pinMode(I_BOLT_LOCKED, INPUT_PULLDOWN);
     pinMode(I_BOLT_UNLOCKED, INPUT_PULLDOWN);
     pinMode(O_BLOCK_KEYPAD_READ, OUTPUT);
@@ -77,27 +79,31 @@ void setup()
     // Get wakeup reason (timer, pin)
     esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
 
+    if (wakeup_reason == ESP_SLEEP_WAKEUP_EXT0) {
+        Serial.println("Wakeup from button");
+    }
+
     // If device was woken up from physical interaction with the deadbolt
-    /*if (wakeup_reason == ESP_SLEEP_WAKEUP_EXT1) {
-        int wakeup_interrupt = esp_sleep_get_ext1_wakeup_status();
+    if (wakeup_reason == ESP_SLEEP_WAKEUP_EXT1) {
+        /*int wakeup_interrupt = esp_sleep_get_ext1_wakeup_status();
 
         // If the device was woken up from pinpad or keypad activity
         if (wakeup_interrupt == (1 << I_KEYPAD_READ | 1 << I_DEADBOLT_READ)) {
-            Serial.println("Keypad activity detected");
+            Serial.println("Wakeup from keypad");
             // Wait for RMT events
         }
 
         // If the device was woken up from a lock/unlock
         if (wakeup_interrupt == (1 << I_BOLT_LOCKED & 1 << I_BOLT_UNLOCKED)) {
             // Send to MQTT
-            Serial.println("Lock/unlock detected");
-        }
-    }*/
+            Serial.println("Wakeup from lock/unlock");
+        }*/
+    }
 
     // If device was woken up from timer
     if (wakeup_reason == ESP_SLEEP_WAKEUP_TIMER) {
         // Check for command messages on MQTT server
-        Serial.println("Timer");
+        Serial.println("Wakeup from timer");
     }
 
     /*trinket_powerbolt_read(on_powerbolt_read);
@@ -147,7 +153,8 @@ static bool connect_to_mqtt() {
 
     mqtt_client.setServer(MQTT_SERVER, MQTT_PORT);
 
-    return mqtt_client.connect(DEVICE_NAME);
+    // Make sure to use a non-clean session to receive persistent messages
+    return mqtt_client.connect(DEVICE_NAME, NULL, NULL, NULL, false, false, NULL, false);
 }
 
 volatile static bool mqtt_event_triggered = false;
@@ -165,25 +172,10 @@ static void mqtt_received(char *topic, byte *payload, unsigned int length)
 
 static void enter_deep_sleep() {
     /*const uint64_t bitmask = 1 << I_KEYPAD_READ | 1 << I_DEADBOLT_READ | 1 << I_BOLT_LOCKED | 1 << I_BOLT_UNLOCKED;
-    esp_sleep_enable_ext1_wakeup(bitmask, ESP_EXT1_WAKEUP_ANY_HIGH);
-    */
+    esp_sleep_enable_ext1_wakeup(bitmask, ESP_EXT1_WAKEUP_ANY_HIGH);*/
+    esp_sleep_enable_ext0_wakeup(GPIO_NUM_0, LOW);
     esp_sleep_enable_timer_wakeup(SLEEP_TIME_S * 1000 * 1000);
     esp_deep_sleep_start();
-}
-
-// Returns whether an event was processed
-static bool process_events() {
-    // MQTT receive event
-    if (mqtt_event_triggered) {
-        mqtt_event_triggered = false;
-        return true;
-    }
-
-    /*if (rmt_event_triggered) {
-        rmt_event_triggered = false;
-    }*/
-
-    return false;
 }
 
 void loop()
@@ -220,14 +212,17 @@ void loop()
     Serial.println("Saying hello");
     mqtt_client.publish(MQTT_TOPIC, "hello");
 
-    // Wait for events (currently only MQTT reads) until timeout
+    // Wait for events until timeout
     Serial.println("Waiting for events");
     unsigned long last_event = millis();
     while (millis() - last_event < EVENT_WAIT_TIME_MS) {
         mqtt_client.loop();
 
-        while (process_events())
+        if (mqtt_event_triggered /* || rmt_event_triggered*/) {
+            mqtt_event_triggered = false;
+            /* rmt_event_triggered = false; */
             last_event = millis();
+        }
 
         delay(100);
     }
