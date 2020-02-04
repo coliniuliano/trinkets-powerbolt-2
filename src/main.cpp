@@ -9,14 +9,15 @@
 
 // Project-specific
 #include "trinket-powerbolt.h"
-#include "aws-iot-credentials.h"
 
-// TEMPORARY
+// Private configuration
+#include "aws-iot-credentials.h"
 #include "wifi-credentials.h"
 
 // IO Configuration
 #define I_BUTTON                0
-/*#define I_BOLT_LOCKED           0   // Microswitch input to detect when deadbolt is fully locked
+/*
+#define I_BOLT_LOCKED           0   // Microswitch input to detect when deadbolt is fully locked
 #define I_BOLT_UNLOCKED         0   // Microswitch input to detect when deadbolt is fully unlocked
 #define I_KEYPAD_READ           19  // Signal to keypad sniffed
 #define I_DEADBOLT_READ         18  // Signal to deadbolt sniffer
@@ -34,7 +35,6 @@
 // Generic Configuration
 #define EVENT_WAIT_TIME_MS      10000   // Time in ms since the last event before entering sleep
 #define SLEEP_TIME_S            10
-
 
 /*
 Main Program Flow:
@@ -64,6 +64,24 @@ PubSubClient mqtt_client(wifi_client);
 
 //static void on_powerbolt_read(uint8_t port, powerbolt_read_t received);
 
+static volatile union {
+    uint8_t flags;
+    struct {
+        uint8_t mqtt: 1;
+        uint8_t rmt: 1;
+        // Temporary
+        uint8_t button: 1;
+        //uint8_t locked: 1;
+        //uint8_t unlocked: 1;
+    };
+} triggered_event_flags;
+
+// Temporary
+static void on_button_press() {
+    Serial.println("Button press");
+    triggered_event_flags.button = true;
+}
+
 void setup()
 {
     // Hardware init
@@ -72,6 +90,9 @@ void setup()
     pinMode(I_BOLT_UNLOCKED, INPUT_PULLDOWN);
     pinMode(O_BLOCK_KEYPAD_READ, OUTPUT);
     trinket_powerbolt_setup(I_KEYPAD_READ, I_DEADBOLT_READ);*/
+    attachInterrupt(I_BUTTON, on_button_press, FALLING);
+    //
+
     Serial.begin(115200);
 
     // No wifi or MQTT configuration in this hard-coded version
@@ -157,10 +178,9 @@ static bool connect_to_mqtt() {
     return mqtt_client.connect(DEVICE_NAME, NULL, NULL, NULL, false, false, NULL, false);
 }
 
-volatile static bool mqtt_event_triggered = false;
 static void mqtt_received(char *topic, byte *payload, unsigned int length)
 {
-    mqtt_event_triggered = true;
+    triggered_event_flags.mqtt = true;
 
     Serial.print("MQTT [");
     Serial.print(topic);
@@ -184,8 +204,7 @@ void loop()
         Serial.println("Connecting to wifi");
         if (!connect_to_wifi()) {
             Serial.println("Failed to connect to wifi");
-            delay(1000);
-            return;
+            return enter_deep_sleep();
         }
     }
 
@@ -194,16 +213,14 @@ void loop()
         if (!connect_to_mqtt()) {
             Serial.print("Failed to connect to MQTT - ");
             Serial.println(mqtt_client.state());
-            delay(1000);
-            return;
+            return enter_deep_sleep();
         }
     }
 
     Serial.println("Subscribing to MQTT topic");
     if (!mqtt_client.subscribe(MQTT_TOPIC)) {
         Serial.println("Failed to subscribe to topic");
-        delay(1000);
-        return;
+        return enter_deep_sleep();
     }
 
     mqtt_client.setCallback(mqtt_received);
@@ -218,13 +235,27 @@ void loop()
     while (millis() - last_event < EVENT_WAIT_TIME_MS) {
         mqtt_client.loop();
 
-        if (mqtt_event_triggered /* || rmt_event_triggered*/) {
-            mqtt_event_triggered = false;
-            /* rmt_event_triggered = false; */
-            last_event = millis();
+        // Nothing happened, keep waiting
+        if (!triggered_event_flags.flags) {
+            delay(50);
+            continue;
         }
 
-        delay(100);
+        // Only process one event per loop
+        last_event = millis();
+        if (triggered_event_flags.mqtt) {
+            triggered_event_flags.mqtt = false;
+            //
+        }
+        else if (triggered_event_flags.rmt) {
+            triggered_event_flags.rmt = false;
+            // Send RMT events from the queue to the MQTT server
+        }
+        // Temporary
+        else if (triggered_event_flags.button) {
+            triggered_event_flags.button = false;
+            mqtt_client.publish(MQTT_TOPIC, "button");
+        }
     }
 
     // Go to sleep
