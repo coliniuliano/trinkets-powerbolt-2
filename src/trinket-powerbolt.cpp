@@ -51,7 +51,7 @@ void trinket_powerbolt_write(POWERBOLT_KEY_CODES key_code) {
     pinMode(rmt_writer->pin, INPUT);
 }
 
-void trinket_powerbolt_read(void (*callback)(uint8_t, powerbolt_read_t)) {
+void trinket_powerbolt_on_read(void (*callback)(uint8_t, powerbolt_read_t)) {
     read_callback = callback;
 }
 

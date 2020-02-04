@@ -16,7 +16,7 @@ struct rmt_obj_s
 extern "C" {
     void trinket_powerbolt_setup(int keypad_read_pin, int powerbolt_read_pin);
     void trinket_powerbolt_write(POWERBOLT_KEY_CODES key_code);
-    void trinket_powerbolt_read(void (*callback)(uint8_t, powerbolt_read_t));
+    void trinket_powerbolt_on_read(void (*callback)(uint8_t, powerbolt_read_t));
 }
 
 #endif

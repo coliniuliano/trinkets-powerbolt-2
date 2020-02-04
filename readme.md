@@ -72,3 +72,16 @@ This is an example firmware that demonstrates an ability to interact with the Po
 * Pressed lock key while locked
     * 0E - lock key
     * D4 - after timeout, caused beeping
+
+## Wiring ##
+| Pin Configuration              | DB pin | KPD pin |
+|--------------------------------|--------|---------|
+| VCC                            | Orange | Black   |
+| 35 - Keypad to deadbolt read   | Prpl   | x       |
+| 32 - Keypad to deadbolt block  | x      | Red     |
+| 33 - Deadbolt to keypad read   | Blue   | White   |
+| VSS                            | Green  | Yellow  |
+| 25 - Locked                    | White  | Orange  |
+| 26 - Unlocked                  | Yellow | Green   |
+| 27 - Buzzer block              | Black  | Blue NC |
+| Common (VCC)                   | Red    | Purple  |
