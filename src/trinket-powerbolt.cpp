@@ -16,14 +16,14 @@ rmt_data_t rmt_read_from_powerbolt_buffer[20];
 rmt_data_t rmt_read_from_keypad_buffer[20];
 void (*read_callback)(uint8_t, powerbolt_read_t) = NULL;
 
-void trinket_powerbolt_setup(int keypad_read_pin, int powerbolt_read_pin) {
+void trinket_powerbolt_setup(int keypad_read_pin, int powerbolt_read_write_pin) {
     // Configure RMT writer to interface with Powerbolt, but detach the writer from the pin
-    rmt_writer = rmtInit(powerbolt_read_pin, true, RMT_MEM_64);
-    pinMatrixOutDetach(powerbolt_read_pin, 0, 0);
+    rmt_writer = rmtInit(powerbolt_read_write_pin, true, RMT_MEM_64);
+    pinMatrixOutDetach(powerbolt_read_write_pin, 0, 0);
 
     // Configure RMT reader to interface with Powerbolt
     rmt_reader_from_powerbolt = rmtInit(keypad_read_pin, false, RMT_MEM_128);
-    rmt_reader_from_keypad = rmtInit(powerbolt_read_pin, false, RMT_MEM_128);
+    rmt_reader_from_keypad = rmtInit(powerbolt_read_write_pin, false, RMT_MEM_128);
 
     // Set RMT tick rates
     // Write is 10x slower than read because it needs to output very long start/stop pulses

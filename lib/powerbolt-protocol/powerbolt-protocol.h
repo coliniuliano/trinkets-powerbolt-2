@@ -4,7 +4,7 @@
 #include "Arduino.h"
 
 enum POWERBOLT_KEY_CODES { 
-    KEY_12, KEY_34, KEY_56, KEY_78, KEY_90, KEY_UNKNOWN, KEY_LOCK, KEY_CLEAR
+    KEY_12, KEY_34, KEY_56, KEY_78, KEY_90, KEY_HIDDEN, KEY_LOCK, KEY_CLEAR_D2, KEY_CLEAR_D4
 };
 const uint8_t powerbolt_key_codes[] = {
     0x01,   // 12
@@ -13,7 +13,7 @@ const uint8_t powerbolt_key_codes[] = {
     0x04,   // 78
     0x05,   // 90
 
-    0x07,   // Unknown (random testing - not on keypad)
+    0x07,   // Hidden (random testing - not on keypad)
 
     0x0E,   // Lock
 
