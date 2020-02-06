@@ -31,6 +31,7 @@
 // Generic Configuration
 #define EVENT_WAIT_TIME_MS      10000   // Time in ms since the last event before entering sleep
 #define SLEEP_TIME_S            30
+#define POWERBOLT_WRITE_WAIT_MS 750     // Time to wait between writes to the deadbolt
 
 WiFiClientSecure wifi_client;
 PubSubClient mqtt_client(wifi_client);
@@ -54,9 +55,9 @@ static void on_button_press() {
 
 static unsigned long bolt_lock_debounce = 0;
 static void on_bolt_lock() {
-    Serial.println("Bolt locked");
     unsigned long timestamp = millis();
-    if (timestamp - bolt_lock_debounce > 100) {
+    if (bolt_lock_debounce == 0 || timestamp - bolt_lock_debounce > 100) {
+        Serial.println("Bolt locked");
         bolt_lock_debounce = timestamp;
         triggered_event_flags.locked = true;
     }
@@ -64,9 +65,9 @@ static void on_bolt_lock() {
 
 static unsigned long bolt_unlock_debounce = 0;
 static void on_bolt_unlock() {
-    Serial.println("Bolt unlocked");
     unsigned long timestamp = millis();
-    if (timestamp - bolt_unlock_debounce > 100) {
+    if (bolt_unlock_debounce == 0 || timestamp - bolt_unlock_debounce > 100) {
+        Serial.println("Bolt unlocked");
         bolt_unlock_debounce = timestamp;
         triggered_event_flags.unlocked = true;
     }
@@ -78,7 +79,8 @@ void setup()
     pinMode(I_BUTTON, INPUT_PULLUP);
     pinMode(I_BOLT_LOCKED, INPUT_PULLDOWN);
     pinMode(I_BOLT_UNLOCKED, INPUT_PULLDOWN);
-    pinMode(O_BLOCK_KEYPAD_RX, OUTPUT);
+    pinMode(O_BLOCK_KEYPAD_RX, INPUT);
+    pinMode(O_BLOCK_BUZZER, INPUT);
 
     trinket_powerbolt_setup(I_KEYPAD_READ, IO_DEADBOLT_RW);
     trinket_powerbolt_on_read(on_powerbolt_read);
@@ -99,7 +101,7 @@ void setup()
         uint64_t wakeup_interrupt = esp_sleep_get_ext1_wakeup_status();
 
         // No action for keypad since the RMT read is not done
-        if (wakeup_interrupt == (1ULL << I_KEYPAD_READ | 1ULL << IO_DEADBOLT_RW))
+        if (wakeup_interrupt & (1ULL << I_KEYPAD_READ | 1ULL << IO_DEADBOLT_RW))
             Serial.println("Wakeup from keypad");
 
         // If the device was woken up from a lock/unlock
@@ -117,9 +119,28 @@ void setup()
    Serial.println("Ready");
 }
 
+static void allow_keypad_lights() {
+    pinMode(O_BLOCK_KEYPAD_RX, INPUT);
+}
+
+static void block_keypad_lights() {
+    pinMode(O_BLOCK_KEYPAD_RX, OUTPUT);
+    digitalWrite(O_BLOCK_KEYPAD_RX, LOW);
+}
+
+static void allow_powerbolt_buzzer() {
+    pinMode(O_BLOCK_BUZZER, INPUT);
+}
+
+static void block_powerbolt_buzzer() {
+    pinMode(O_BLOCK_BUZZER, OUTPUT);
+    digitalWrite(O_BLOCK_BUZZER, LOW);
+}
+
 // Put received messages into a queue
 static void on_powerbolt_read(uint8_t port, powerbolt_read_t received) {
     triggered_event_flags.rmt = true;
+
     // TODO: Queue the received msg
 
     Serial.print(port == 0 ? "Powerbolt" : "Keypad");
@@ -130,30 +151,25 @@ static void on_powerbolt_read(uint8_t port, powerbolt_read_t received) {
         Serial.print("invalid");
 
     Serial.println();
-}
 
-// Prevent the keypad from receiving signals from the powerbolt
-// No need to exit this mode while the device is running
-static void block_keypad_lights() {
-    pinMode(O_BLOCK_KEYPAD_RX, OUTPUT);
-    digitalWrite(O_BLOCK_KEYPAD_RX, LOW);
-}
-
-// Prevent the powerbolt from sounding the buzzer on inputs
-static void block_powerbolt_buzzer() {
-    digitalWrite(O_BLOCK_BUZZER, HIGH);
+    // Stop blocking the lights and buzzer when the deadbolt sends C7
+    if (port == 0 && received.valid && received.data == 0xC7) {
+        allow_powerbolt_buzzer();
+        allow_keypad_lights();
+    }
 }
 
 static unsigned long last_powerbolt_write = 0;
 static void powerbolt_write(POWERBOLT_KEY_CODES key_code) {
     unsigned long timestamp = millis();
     unsigned long elapsed_since_last_write = timestamp - last_powerbolt_write;
-    if (last_powerbolt_write > 0 && elapsed_since_last_write < 500)
-        delay(500 - elapsed_since_last_write);
+    if (last_powerbolt_write > 0 && elapsed_since_last_write < POWERBOLT_WRITE_WAIT_MS)
+        delay(POWERBOLT_WRITE_WAIT_MS - elapsed_since_last_write);
 
     block_keypad_lights();
     block_powerbolt_buzzer();
     trinket_powerbolt_write(key_code);
+    last_powerbolt_write = millis();
 }
 
 // MQTT messages handled immediately
@@ -233,7 +249,13 @@ static bool connect_to_mqtt() {
 }
 
 static void enter_deep_sleep() {
-    const uint64_t bitmask = 1ULL << I_KEYPAD_READ | 1ULL << IO_DEADBOLT_RW | 1ULL << I_BOLT_LOCKED | 1ULL << I_BOLT_UNLOCKED;
+    // Interrupts are on high, so make sure an input isn't already high
+    uint64_t bitmask = 1ULL << I_KEYPAD_READ | 1ULL << IO_DEADBOLT_RW;
+    if (!digitalRead(I_BOLT_LOCKED))
+        bitmask |= 1 << I_BOLT_LOCKED;
+    if (!digitalRead(I_BOLT_UNLOCKED))
+        bitmask |= 1 << I_BOLT_UNLOCKED;
+
     esp_sleep_enable_ext1_wakeup(bitmask, ESP_EXT1_WAKEUP_ANY_HIGH);
     esp_sleep_enable_ext0_wakeup(GPIO_NUM_0, LOW);
     esp_sleep_enable_timer_wakeup(SLEEP_TIME_S * 1000 * 1000);
