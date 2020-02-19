@@ -35,7 +35,7 @@ const uint8_t powerbolt_response_codes[] = {
     //0xC6, // nothing
     0xC7,   // lights off, code memory cleared
     0xC8,   // 1 yellow long
-    //0xC9,   // nothing - received when muting
+    //0xC9,   // nothing - received after writing setting (muting, new UC, delete UC)
     0xCA,   // 3 yellow medium
     0xCB,   // 1 yellow medium
     //0xCC  // nothing - receved during programming door orientation (and after reset)
